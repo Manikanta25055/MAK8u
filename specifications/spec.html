@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAKu Microcontroller Specifications</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            background: #fafafa;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px 0;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            color: #7f8c8d;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: #fff;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 0;
+        }
+
+        .nav-tab {
+            flex: 1;
+            padding: 15px 20px;
+            background: #ecf0f1;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border-right: 1px solid #bdc3c7;
+        }
+
+        .nav-tab:last-child {
+            border-right: none;
+        }
+
+        .nav-tab.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .nav-tab:hover:not(.active) {
+            background: #d5dbdb;
+        }
+
+        .content {
+            background: #fff;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-height: 600px;
+        }
+
+        .tab-content {
+            display: none;
+            padding: 30px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .spec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .spec-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 20px;
+            transition: transform 0.2s ease;
+        }
+
+        .spec-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .spec-card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+        }
+
+        .spec-list {
+            list-style: none;
+        }
+
+        .spec-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .spec-list li:last-child {
+            border-bottom: none;
+        }
+
+        .spec-list strong {
+            color: #34495e;
+            width: 120px;
+            display: inline-block;
+        }
+
+        .memory-map {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: #fff;
+        }
+
+        .memory-map th,
+        .memory-map td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        .memory-map th {
+            background: #34495e;
+            color: white;
+            font-weight: 500;
+        }
+
+        .memory-map tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .memory-map tr:hover {
+            background: #e8f4f8;
+        }
+
+        .feature-highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .feature-highlight h3 {
+            margin-bottom: 10px;
+        }
+
+        .collapsible {
+            background: #f1f2f6;
+            color: #2c3e50;
+            cursor: pointer;
+            padding: 15px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 16px;
+            font-weight: 500;
+            border-radius: 4px;
+            margin: 5px 0;
+            transition: background 0.3s ease;
+        }
+
+        .collapsible:hover {
+            background: #ddd;
+        }
+
+        .collapsible.active {
+            background: #3498db;
+            color: white;
+        }
+
+        .collapsible-content {
+            padding: 0 18px;
+            display: none;
+            overflow: hidden;
+            background: #fff;
+            border-left: 3px solid #3498db;
+            margin-bottom: 10px;
+        }
+
+        .collapsible-content.show {
+            display: block;
+            padding: 18px;
+        }
+
+        .timing-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        .timing-table th,
+        .timing-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .timing-table th {
+            background: #2c3e50;
+            color: white;
+        }
+
+        .critical {
+            background: #ffe6e6;
+            font-weight: bold;
+        }
+
+        .performance-metric {
+            display: inline-block;
+            background: #e8f5e8;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #27ae60;
+            border: 1px solid #27ae60;
+        }
+
+        @media (max-width: 768px) {
+            .nav-tabs {
+                flex-direction: column;
+            }
+            
+            .nav-tab {
+                border-right: none;
+                border-bottom: 1px solid #bdc3c7;
+            }
+            
+            .spec-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MAKu Microcontroller</h1>
+            <p>Advanced 8-bit Dual-Core RISC Microcontroller with Vector Processing</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="openTab(event, 'overview')">Overview</button>
+            <button class="nav-tab" onclick="openTab(event, 'architecture')">Architecture</button>
+            <button class="nav-tab" onclick="openTab(event, 'memory')">Memory System</button>
+            <button class="nav-tab" onclick="openTab(event, 'isa')">ISA</button>
+            <button class="nav-tab" onclick="openTab(event, 'peripherals')">Peripherals</button>
+            <button class="nav-tab" onclick="openTab(event, 'timing')">Timing & Performance</button>
+            <button class="nav-tab" onclick="openTab(event, 'unique')">Unique Features</button>
+        </div>
+
+        <div class="content">
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content active">
+                <h2>MAKu Microcontroller Overview</h2>
+                
+                <div class="feature-highlight">
+                    <h3>Key Innovation: Dual-Core Asymmetric Architecture</h3>
+                    <p>First 8-bit microcontroller with dedicated real-time core and general-purpose core, enabling true deterministic real-time processing alongside complex application tasks.</p>
+                </div>
+
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>Core Specifications</h3>
+                        <ul class="spec-list">
+                            <li><strong>Architecture:</strong> Dual-core 8-bit RISC</li>
+                            <li><strong>Instructions:</strong> 16-bit wide, MAK-8 ISA compatible</li>
+                            <li><strong>Pipeline:</strong> 5-stage (RT Core), 7-stage (GP Core)</li>
+                            <li><strong>Frequency:</strong> 50MHz RT / 100MHz GP</li>
+                            <li><strong>Registers:</strong> 8 per core + shared registers</li>
+                            <li><strong>Process:</strong> Nexys A7 100T FPGA</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Memory Configuration</h3>
+                        <ul class="spec-list">
+                            <li><strong>Program ROM:</strong> 128KB (shared)</li>
+                            <li><strong>Data RAM:</strong> 64KB (partitioned)</li>
+                            <li><strong>Vector RAM:</strong> 8KB (dedicated)</li>
+                            <li><strong>Cache:</strong> 4KB I-Cache per core</li>
+                            <li><strong>Stack:</strong> 4KB per core</li>
+                            <li><strong>Peripheral:</strong> 8KB mapped space</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Performance Metrics</h3>
+                        <div style="margin-top: 10px;">
+                            <span class="performance-metric">200 MIPS Combined</span>
+                            <span class="performance-metric">5-cycle interrupt latency</span>
+                            <span class="performance-metric">250ns worst-case jitter</span>
+                            <span class="performance-metric">16-bit vector ops</span>
+                        </div>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Target Applications</h3>
+                        <ul class="spec-list">
+                            <li><strong>Motor Control:</strong> Real-time PWM + control algorithms</li>
+                            <li><strong>Audio Processing:</strong> DSP + user interface</li>
+                            <li><strong>Industrial IoT:</strong> Sensor fusion + connectivity</li>
+                            <li><strong>Robotics:</strong> Real-time control + planning</li>
+                            <li><strong>Medical Devices:</strong> Critical timing + data processing</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Architecture Tab -->
+            <div id="architecture" class="tab-content">
+                <h2>Dual-Core Architecture</h2>
+
+                <button class="collapsible">Real-Time Core (RT-Core)</button>
+                <div class="collapsible-content">
+                    <h4>Optimized for Deterministic Real-Time Processing</h4>
+                    <ul class="spec-list">
+                        <li><strong>Pipeline:</strong> 5-stage in-order execution</li>
+                        <li><strong>Frequency:</strong> 50MHz (20ns cycle time)</li>
+                        <li><strong>Instruction Set:</strong> Extended MAK-8 + RT extensions</li>
+                        <li><strong>Cache:</strong> 2KB I-Cache, no D-Cache (predictable timing)</li>
+                        <li><strong>Interrupts:</strong> 16 levels with priority inheritance</li>
+                        <li><strong>Specialization:</strong> Hardware timers, PWM, encoder interfaces</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">General-Purpose Core (GP-Core)</button>
+                <div class="collapsible-content">
+                    <h4>High-Performance Application Processing</h4>
+                    <ul class="spec-list">
+                        <li><strong>Pipeline:</strong> 7-stage superscalar (dual-issue)</li>
+                        <li><strong>Frequency:</strong> 100MHz (10ns cycle time)</li>
+                        <li><strong>Instruction Set:</strong> Full MAK-8 + Vector extensions</li>
+                        <li><strong>Cache:</strong> 4KB I-Cache, 2KB D-Cache</li>
+                        <li><strong>Vector Unit:</strong> 128-bit SIMD operations</li>
+                        <li><strong>Specialization:</strong> DSP, crypto, communication protocols</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Inter-Core Communication</button>
+                <div class="collapsible-content">
+                    <h4>High-Speed Core-to-Core Interface</h4>
+                    <ul class="spec-list">
+                        <li><strong>Shared Memory:</strong> 8KB dual-port RAM</li>
+                        <li><strong>Message Queues:</strong> 4x 256-byte FIFO queues</li>
+                        <li><strong>Semaphores:</strong> 16 hardware semaphores</li>
+                        <li><strong>Interrupts:</strong> Cross-core interrupt capability</li>
+                        <li><strong>Synchronization:</strong> Hardware barrier primitive</li>
+                        <li><strong>Latency:</strong> 2-cycle message passing</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Vector Processing Unit (VPU)</button>
+                <div class="collapsible-content">
+                    <h4>128-bit SIMD Vector Operations</h4>
+                    <ul class="spec-list">
+                        <li><strong>Data Types:</strong> 16x8-bit, 8x16-bit, 4x32-bit</li>
+                        <li><strong>Operations:</strong> Add, Sub, Mul, MAC, Shift, Logic</li>
+                        <li><strong>Registers:</strong> 8x 128-bit vector registers</li>
+                        <li><strong>Throughput:</strong> 1 vector op per cycle @ 100MHz</li>
+                        <li><strong>Applications:</strong> DSP, image processing, cryptography</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Memory System Tab -->
+            <div id="memory" class="tab-content">
+                <h2>Memory System Architecture</h2>
+
+                <table class="memory-map">
+                    <thead>
+                        <tr>
+                            <th>Address Range</th>
+                            <th>Size</th>
+                            <th>Type</th>
+                            <th>Access</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>0x00000 - 0x1FFFF</td>
+                            <td>128KB</td>
+                            <td>ROM</td>
+                            <td>Shared R</td>
+                            <td>Program Memory (Block RAM)</td>
+                        </tr>
+                        <tr>
+                            <td>0x20000 - 0x27FFF</td>
+                            <td>32KB</td>
+                            <td>RAM</td>
+                            <td>RT-Core</td>
+                            <td>RT Core Data Memory</td>
+                        </tr>
+                        <tr>
+                            <td>0x28000 - 0x2FFFF</td>
+                            <td>32KB</td>
+                            <td>RAM</td>
+                            <td>GP-Core</td>
+                            <td>GP Core Data Memory</td>
+                        </tr>
+                        <tr>
+                            <td>0x30000 - 0x31FFF</td>
+                            <td>8KB</td>
+                            <td>RAM</td>
+                            <td>Shared RW</td>
+                            <td>Inter-Core Communication</td>
+                        </tr>
+                        <tr>
+                            <td>0x32000 - 0x33FFF</td>
+                            <td>8KB</td>
+                            <td>RAM</td>
+                            <td>GP-Core</td>
+                            <td>Vector Data Memory</td>
+                        </tr>
+                        <tr>
+                            <td>0x34000 - 0x34FFF</td>
+                            <td>4KB</td>
+                            <td>RAM</td>
+                            <td>RT-Core</td>
+                            <td>RT Stack Memory</td>
+                        </tr>
+                        <tr>
+                            <td>0x35000 - 0x35FFF</td>
+                            <td>4KB</td>
+                            <td>RAM</td>
+                            <td>GP-Core</td>
+                            <td>GP Stack Memory</td>
+                        </tr>
+                        <tr>
+                            <td>0x38000 - 0x39FFF</td>
+                            <td>8KB</td>
+                            <td>I/O</td>
+                            <td>Both</td>
+                            <td>Peripheral Registers</td>
+                        </tr>
+                        <tr>
+                            <td>0x3A000 - 0x3AFFF</td>
+                            <td>4KB</td>
+                            <td>ROM</td>
+                            <td>Both</td>
+                            <td>Interrupt Vector Table</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="feature-highlight">
+                    <h3>Advanced Memory Features</h3>
+                    <ul>
+                        <li><strong>Dual-Port Design:</strong> Simultaneous access by both cores</li>
+                        <li><strong>Memory Protection:</strong> Hardware bounds checking</li>
+                        <li><strong>Cache Coherency:</strong> Automatic invalidation on shared access</li>
+                        <li><strong>DMA Engine:</strong> 4-channel with scatter-gather support</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Peripherals Tab -->
+            <div id="peripherals" class="tab-content">
+                <h2>Integrated Peripheral Set</h2>
+
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>Timer/Counter Complex</h3>
+                        <ul class="spec-list">
+                            <li><strong>Quantity:</strong> 6x 16-bit timers</li>
+                            <li><strong>RT-Core:</strong> 4 timers (deterministic)</li>
+                            <li><strong>GP-Core:</strong> 2 timers (general purpose)</li>
+                            <li><strong>PWM Channels:</strong> 12 channels, 10-bit resolution</li>
+                            <li><strong>Input Capture:</strong> 8 channels with timestamps</li>
+                            <li><strong>Prescaler:</strong> 1, 8, 64, 256, 1024</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Communication Interfaces</h3>
+                        <ul class="spec-list">
+                            <li><strong>UART:</strong> 4 channels, up to 2Mbps</li>
+                            <li><strong>SPI:</strong> 3 controllers (1 high-speed @ 25MHz)</li>
+                            <li><strong>I2C:</strong> 2 controllers (100kHz/400kHz/1MHz)</li>
+                            <li><strong>CAN:</strong> 1 controller (ISO 11898-1)</li>
+                            <li><strong>USB:</strong> Full-speed device interface</li>
+                            <li><strong>Ethernet:</strong> 10/100 MAC (external PHY)</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Analog Interfaces</h3>
+                        <ul class="spec-list">
+                            <li><strong>ADC:</strong> 12-bit, 16 channels, 1MSPS</li>
+                            <li><strong>DAC:</strong> 2x 12-bit, 100kSPS</li>
+                            <li><strong>Comparators:</strong> 4x analog comparators</li>
+                            <li><strong>References:</strong> Precision voltage references</li>
+                            <li><strong>OpAmps:</strong> 2x programmable gain amplifiers</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Security & Crypto Engine</h3>
+                        <ul class="spec-list">
+                            <li><strong>AES:</strong> 128/256-bit encryption/decryption</li>
+                            <li><strong>Hash:</strong> SHA-256 accelerator</li>
+                            <li><strong>RNG:</strong> True random number generator</li>
+                            <li><strong>Key Storage:</strong> Secure 1KB key memory</li>
+                            <li><strong>Tamper:</strong> Physical intrusion detection</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Digital I/O</h3>
+                        <ul class="spec-list">
+                            <li><strong>GPIO Pins:</strong> 64 configurable pins</li>
+                            <li><strong>Drive Strength:</strong> 2mA, 4mA, 8mA, 12mA</li>
+                            <li><strong>Pull Resistors:</strong> 10kΩ up/down per pin</li>
+                            <li><strong>Interrupt:</strong> All pins interrupt capable</li>
+                            <li><strong>Special Functions:</strong> Multiplexed peripheral I/O</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Advanced Features</h3>
+                        <ul class="spec-list">
+                            <li><strong>DMA:</strong> 8-channel with vector support</li>
+                            <li><strong>Event System:</strong> Hardware event routing</li>
+                            <li><strong>Clock Control:</strong> Dynamic frequency scaling</li>
+                            <li><strong>Power Mgmt:</strong> Multiple sleep modes</li>
+                            <li><strong>Debug:</strong> JTAG + trace capabilities</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timing & Performance Tab -->
+            <div id="timing" class="tab-content">
+                <h2>Timing Analysis & Performance</h2>
+
+                <h3>Critical Timing Constraints</h3>
+                <table class="timing-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>RT-Core (50MHz)</th>
+                            <th>GP-Core (100MHz)</th>
+                            <th>Margin</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Clock Period</td>
+                            <td>20.0 ns</td>
+                            <td>10.0 ns</td>
+                            <td>-</td>
+                            <td>Target</td>
+                        </tr>
+                        <tr class="critical">
+                            <td>Setup Time</td>
+                            <td>17.5 ns</td>
+                            <td>8.5 ns</td>
+                            <td>2.5 ns / 1.5 ns</td>
+                            <td>Critical</td>
+                        </tr>
+                        <tr>
+                            <td>Hold Time</td>
+                            <td>0.5 ns</td>
+                            <td>0.3 ns</td>
+                            <td>0.2 ns</td>
+                            <td>Safe</td>
+                        </tr>
+                        <tr>
+                            <td>Clock Skew</td>
+                            <td>±0.5 ns</td>
+                            <td>±0.3 ns</td>
+                            <td>Budget</td>
+                            <td>Controlled</td>
+                        </tr>
+                        <tr class="critical">
+                            <td>ALU Propagation</td>
+                            <td>15.0 ns</td>
+                            <td>7.0 ns</td>
+                            <td>2.5 ns / 1.5 ns</td>
+                            <td>Critical</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Interrupt Response Performance</h3>
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>RT-Core Interrupt Timing</h3>
+                        <ul class="spec-list">
+                            <li><strong>Recognition:</strong> 1 cycle (20ns)</li>
+                            <li><strong>Context Save:</strong> 3 cycles (60ns)</li>
+                            <li><strong>Vector Fetch:</strong> 1 cycle (20ns)</li>
+                            <li><strong>Total Latency:</strong> 5 cycles (100ns)</li>
+                            <li><strong>Jitter:</strong> ±10ns maximum</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Memory Access Performance</h3>
+                        <ul class="spec-list">
+                            <li><strong>L1 Cache Hit:</strong> 1 cycle</li>
+                            <li><strong>L1 Cache Miss:</strong> 3 cycles</li>
+                            <li><strong>Shared Memory:</strong> 2 cycles</li>
+                            <li><strong>Peripheral Access:</strong> 1-4 cycles</li>
+                            <li><strong>Vector Memory:</strong> 1 cycle (burst)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>Power Consumption Analysis</h3>
+                <table class="timing-table">
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Active Power</th>
+                            <th>Idle Power</th>
+                            <th>Sleep Power</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>RT-Core</td>
+                            <td>45 mW</td>
+                            <td>12 mW</td>
+                            <td>0.8 mW</td>
+                        </tr>
+                        <tr>
+                            <td>GP-Core</td>
+                            <td>85 mW</td>
+                            <td>18 mW</td>
+                            <td>1.2 mW</td>
+                        </tr>
+                        <tr>
+                            <td>Memory System</td>
+                            <td>35 mW</td>
+                            <td>8 mW</td>
+                            <td>0.5 mW</td>
+                        </tr>
+                        <tr>
+                            <td>Peripherals</td>
+                            <td>25 mW</td>
+                            <td>5 mW</td>
+                            <td>0.3 mW</td>
+                        </tr>
+                        <tr style="font-weight: bold; background: #e8f4f8;">
+                            <td>Total System</td>
+                            <td>190 mW</td>
+                            <td>43 mW</td>
+                            <td>2.8 mW</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ISA Tab -->
+            <div id="isa" class="tab-content">
+                <h2>MAKu Instruction Set Architecture</h2>
+
+                <h3>Core ISA Extensions (Compatible with MAK-8)</h3>
+                <table class="memory-map">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Mnemonic</th>
+                            <th>Opcode</th>
+                            <th>Format</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="background: #f0f8ff;"><td colspan="5"><strong>Base MAK-8 Instructions (R-Type)</strong></td></tr>
+                        <tr><td>Arithmetic</td><td>ADD Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 + Rs2</td></tr>
+                        <tr><td></td><td>SUB Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 - Rs2</td></tr>
+                        <tr><td>Logic</td><td>AND Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 & Rs2</td></tr>
+                        <tr><td></td><td>OR Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 | Rs2</td></tr>
+                        <tr><td></td><td>XOR Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 ^ Rs2</td></tr>
+                        <tr><td></td><td>NOT Rd,Rs1</td><td>0000</td><td>R-Type</td><td>Rd = ~Rs1</td></tr>
+                        <tr><td>Shift</td><td>SHL Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 << Rs2</td></tr>
+                        <tr><td></td><td>SHR Rd,Rs1,Rs2</td><td>0000</td><td>R-Type</td><td>Rd = Rs1 >> Rs2</td></tr>
+                        
+                        <tr style="background: #f0f8ff;"><td colspan="5"><strong>Immediate Instructions (I-Type)</strong></td></tr>
+                        <tr><td>Immediate</td><td>ADDI Rd,Rs1,Imm</td><td>0001</td><td>I-Type</td><td>Rd = Rs1 + Imm</td></tr>
+                        <tr><td></td><td>SUBI Rd,Rs1,Imm</td><td>0010</td><td>I-Type</td><td>Rd = Rs1 - Imm</td></tr>
+                        <tr><td></td><td>ANDI Rd,Rs1,Imm</td><td>0011</td><td>I-Type</td><td>Rd = Rs1 & Imm</td></tr>
+                        <tr><td></td><td>ORI Rd,Rs1,Imm</td><td>0100</td><td>I-Type</td><td>Rd = Rs1 | Imm</td></tr>
+                        <tr><td></td><td>XORI Rd,Rs1,Imm</td><td>0101</td><td>I-Type</td><td>Rd = Rs1 ^ Imm</td></tr>
+                        <tr><td></td><td>LUI Rd,Imm</td><td>0110</td><td>I-Type</td><td>Rd = Imm << 2</td></tr>
+                        
+                        <tr style="background: #f0f8ff;"><td colspan="5"><strong>Memory Instructions (M-Type)</strong></td></tr>
+                        <tr><td>Memory</td><td>LDB Rd,Rs1,Offset</td><td>0111</td><td>M-Type</td><td>Rd = Mem[Rs1+Offset]</td></tr>
+                        <tr><td></td><td>STB Rs2,Rs1,Offset</td><td>1000</td><td>M-Type</td><td>Mem[Rs1+Offset] = Rs2</td></tr>
+                        
+                        <tr style="background: #f0f8ff;"><td colspan="5"><strong>Branch Instructions (B-Type)</strong></td></tr>
+                        <tr><td>Branch</td><td>BEQ Rs1,Offset</td><td>1001</td><td>B-Type</td><td>if(Rs1==0) PC += Offset</td></tr>
+                        <tr><td></td><td>BNE Rs1,Offset</td><td>1001</td><td>B-Type</td><td>if(Rs1!=0) PC += Offset</td></tr>
+                        <tr><td></td><td>BLT Rs1,Offset</td><td>1001</td><td>B-Type</td><td>if(Rs1<0) PC += Offset</td></tr>
+                        <tr><td></td><td>BGE Rs1,Offset</td><td>1001</td><td>B-Type</td><td>if(Rs1>=0) PC += Offset</td></tr>
+                        <tr><td>Jump</td><td>JMP Offset</td><td>1001</td><td>B-Type</td><td>PC += Offset</td></tr>
+                        <tr><td></td><td>JAL Rd,Offset</td><td>1001</td><td>B-Type</td><td>Rd=PC+1; PC += Offset</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>MAKu Dual-Core Extensions</h3>
+                <table class="memory-map">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Mnemonic</th>
+                            <th>Opcode</th>
+                            <th>Format</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="background: #ffe6e6;"><td colspan="5"><strong>Inter-Core Communication</strong></td></tr>
+                        <tr><td>Message</td><td>MSGSND Queue,Rs1</td><td>1010</td><td>I-Type</td><td>Send Rs1 to message queue</td></tr>
+                        <tr><td></td><td>MSGRCV Rd,Queue</td><td>1010</td><td>I-Type</td><td>Receive from queue to Rd</td></tr>
+                        <tr><td>Sync</td><td>SEMGET Rd,SemID</td><td>1010</td><td>I-Type</td><td>Acquire semaphore</td></tr>
+                        <tr><td></td><td>SEMREL SemID</td><td>1010</td><td>I-Type</td><td>Release semaphore</td></tr>
+                        <tr><td></td><td>BARRIER BarID</td><td>1010</td><td>I-Type</td><td>Synchronization barrier</td></tr>
+                        <tr><td>Core</td><td>COREINT CoreID</td><td>1010</td><td>I-Type</td><td>Send interrupt to other core</td></tr>
+                        
+                        <tr style="background: #e6ffe6;"><td colspan="5"><strong>Vector Instructions (GP-Core Only)</strong></td></tr>
+                        <tr><td>Load/Store</td><td>VLD Vd,Rs1,Offset</td><td>1011</td><td>V-Type</td><td>Load 128-bit vector</td></tr>
+                        <tr><td></td><td>VST Vs2,Rs1,Offset</td><td>1011</td><td>V-Type</td><td>Store 128-bit vector</td></tr>
+                        <tr><td>Arithmetic</td><td>VADD Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector add (16x8-bit)</td></tr>
+                        <tr><td></td><td>VSUB Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector subtract</td></tr>
+                        <tr><td></td><td>VMUL Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector multiply</td></tr>
+                        <tr><td></td><td>VMAC Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector multiply-accumulate</td></tr>
+                        <tr><td>Logic</td><td>VAND Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector AND</td></tr>
+                        <tr><td></td><td>VOR Vd,Vs1,Vs2</td><td>1011</td><td>V-Type</td><td>Vector OR</td></tr>
+                        
+                        <tr style="background: #fff0e6;"><td colspan="5"><strong>Real-Time Extensions (RT-Core)</strong></td></tr>
+                        <tr><td>Timer</td><td>TSTART TimerID,Rs1</td><td>1100</td><td>I-Type</td><td>Start timer with period</td></tr>
+                        <tr><td></td><td>TSTOP TimerID</td><td>1100</td><td>I-Type</td><td>Stop timer</td></tr>
+                        <tr><td></td><td>TREAD Rd,TimerID</td><td>1100</td><td>I-Type</td><td>Read timer value</td></tr>
+                        <tr><td>PWM</td><td>PWMSET Ch,Rs1,Rs2</td><td>1100</td><td>I-Type</td><td>Set PWM duty/period</td></tr>
+                        <tr><td>Priority</td><td>SETPRI Rs1</td><td>1100</td><td>I-Type</td><td>Set task priority</td></tr>
+                        <tr><td></td><td>GETPRI Rd</td><td>1100</td><td>I-Type</td><td>Get current priority</td></tr>
+                        
+                        <tr style="background: #f0f0ff;"><td colspan="5"><strong>System Instructions</strong></td></tr>
+                        <tr><td>Interrupt</td><td>EI</td><td>1101</td><td>S-Type</td><td>Enable interrupts</td></tr>
+                        <tr><td></td><td>DI</td><td>1101</td><td>S-Type</td><td>Disable interrupts</td></tr>
+                        <tr><td></td><td>RETI</td><td>1101</td><td>S-Type</td><td>Return from interrupt</td></tr>
+                        <tr><td>Stack</td><td>PUSH Rs1</td><td>1101</td><td>S-Type</td><td>Push to stack</td></tr>
+                        <tr><td></td><td>POP Rd</td><td>1101</td><td>S-Type</td><td>Pop from stack</td></tr>
+                        <tr><td>Call</td><td>CALL Address</td><td>1101</td><td>S-Type</td><td>Call subroutine</td></tr>
+                        <tr><td></td><td>RET</td><td>1101</td><td>S-Type</td><td>Return from subroutine</td></tr>
+                        <tr><td>Control</td><td>NOP</td><td>1111</td><td>S-Type</td><td>No operation</td></tr>
+                        <tr><td></td><td>HLT</td><td>1110</td><td>S-Type</td><td>Halt processor</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>Instruction Formats</h3>
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>R-Type (Register-Register)</h3>
+                        <pre style="background: #f8f8f8; padding: 10px; font-family: monospace;">
+15 14 13 12 | 11 10 9 | 8 7 6 | 5 4 3 | 2 1 0
+  OPCODE    |   RD    |  RS1  |  RS2  | FUNC
+   (4 bits) | (3 bits)|(3 bits)|(3 bits)|(3 bits)
+                        </pre>
+                    </div>
+                    
+                    <div class="spec-card">
+                        <h3>I-Type (Immediate)</h3>
+                        <pre style="background: #f8f8f8; padding: 10px; font-family: monospace;">
+15 14 13 12 | 11 10 9 | 8 7 6 | 5 4 3 2 1 0
+  OPCODE    |   RD    |  RS1  |   IMMEDIATE
+   (4 bits) | (3 bits)|(3 bits)|   (6 bits)
+                        </pre>
+                    </div>
+                    
+                    <div class="spec-card">
+                        <h3>V-Type (Vector)</h3>
+                        <pre style="background: #f8f8f8; padding: 10px; font-family: monospace;">
+15 14 13 12 | 11 10 9 | 8 7 6 | 5 4 3 | 2 1 0
+  OPCODE    |   VD    |  VS1  |  VS2  | VFUNC
+   (4 bits) | (3 bits)|(3 bits)|(3 bits)|(3 bits)
+                        </pre>
+                    </div>
+                    
+                    <div class="spec-card">
+                        <h3>S-Type (System)</h3>
+                        <pre style="background: #f8f8f8; padding: 10px; font-family: monospace;">
+15 14 13 12 | 11 10 9 8 7 6 5 4 3 2 1 0
+  OPCODE    |        FUNCTION CODE
+   (4 bits) |         (12 bits)
+                        </pre>
+                    </div>
+                </div>
+
+                <h3>Programming Model</h3>
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>Register Map</h3>
+                        <ul class="spec-list">
+                            <li><strong>R0:</strong> Always zero (both cores)</li>
+                            <li><strong>R1-R7:</strong> General purpose per core</li>
+                            <li><strong>S0-S7:</strong> Shared registers</li>
+                            <li><strong>V0-V7:</strong> Vector registers (GP-Core)</li>
+                            <li><strong>PC:</strong> Program counter per core</li>
+                            <li><strong>SP:</strong> Stack pointer per core</li>
+                            <li><strong>SR:</strong> Status register per core</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="spec-card">
+                        <h3>Status Register Bits</h3>
+                        <ul class="spec-list">
+                            <li><strong>Bit 0 (Z):</strong> Zero flag</li>
+                            <li><strong>Bit 1 (C):</strong> Carry flag</li>
+                            <li><strong>Bit 2 (N):</strong> Negative flag</li>
+                            <li><strong>Bit 3 (V):</strong> Overflow flag</li>
+                            <li><strong>Bit 4 (I):</strong> Interrupt enable</li>
+                            <li><strong>Bit 5-7:</strong> Priority level</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unique Features Tab -->
+            <div id="unique" class="tab-content">
+                <h2>Unique Differentiating Features</h2>
+
+                <div class="feature-highlight">
+                    <h3>World's First 8-bit Dual-Core Microcontroller</h3>
+                    <p>Asymmetric dual-core design enables true real-time processing alongside complex application tasks, solving the fundamental trade-off between determinism and performance.</p>
+                </div>
+
+                <button class="collapsible">Hardware Priority Inheritance</button>
+                <div class="collapsible-content">
+                    <h4>Prevents Priority Inversion in Hardware</h4>
+                    <p>Advanced interrupt controller automatically elevates priority of resource-holding tasks, eliminating priority inversion without software intervention. Critical for real-time systems.</p>
+                    <ul class="spec-list">
+                        <li><strong>Automatic Detection:</strong> Hardware monitors resource dependencies</li>
+                        <li><strong>Dynamic Priority:</strong> Temporary priority elevation</li>
+                        <li><strong>Zero Overhead:</strong> No software intervention required</li>
+                        <li><strong>Deadlock Prevention:</strong> Hardware timeout mechanisms</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Adaptive Time Slicing</button>
+                <div class="collapsible-content">
+                    <h4>Dynamic Task Scheduling Based on Workload</h4>
+                    <p>Hardware scheduler automatically adjusts time slices based on task behavior and system load, optimizing both throughput and responsiveness.</p>
+                    <ul class="spec-list">
+                        <li><strong>Workload Analysis:</strong> Hardware performance counters</li>
+                        <li><strong>Dynamic Adjustment:</strong> Real-time slice modification</li>
+                        <li><strong>Predictive Scheduling:</strong> Pattern recognition for optimal scheduling</li>
+                        <li><strong>Fairness Guarantee:</strong> Prevents starvation</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Quantum Cryptography Ready</button>
+                <div class="collapsible-content">
+                    <h4>Post-Quantum Cryptographic Acceleration</h4>
+                    <p>Hardware acceleration for lattice-based and hash-based cryptographic algorithms, future-proofing against quantum computing threats.</p>
+                    <ul class="spec-list">
+                        <li><strong>NTRU Support:</strong> Lattice-based encryption</li>
+                        <li><strong>SPHINCS+:</strong> Hash-based signatures</li>
+                        <li><strong>Kyber/Dilithium:</strong> NIST post-quantum standards</li>
+                        <li><strong>Constant Time:</strong> Side-channel attack resistance</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Self-Healing Memory</button>
+                <div class="collapsible-content">
+                    <h4>Automatic Error Detection and Correction</h4>
+                    <p>Advanced ECC memory with automatic error correction and memory remapping for enhanced reliability in harsh environments.</p>
+                    <ul class="spec-list">
+                        <li><strong>Triple Redundancy:</strong> Critical code sections</li>
+                        <li><strong>Dynamic Remapping:</strong> Automatic bad block management</li>
+                        <li><strong>Error Logging:</strong> Comprehensive error tracking</li>
+                        <li><strong>Predictive Failure:</strong> Wear leveling and health monitoring</li>
+                    </ul>
+                </div>
+
+                <button class="collapsible">Neural Network Accelerator</button>
+                <div class="collapsible-content">
+                    <h4>Dedicated Hardware for AI/ML Inference</h4>
+                    <p>Specialized processing unit for neural network inference, enabling edge AI applications with minimal power consumption.</p>
+                    <ul class="spec-list">
+                        <li><strong>Quantization:</strong> INT8 and binary neural networks</li>
+                        <li><strong>Sparsity Support:</strong> Optimized for sparse networks</li>
+                        <li><strong>Model Compression:</strong> On-chip pruning capabilities</li>
+                        <li><strong>Energy Efficient:</strong> 100 GOPS/W performance</li>
+                    </ul>
+                </div>
+
+                <h3>Innovation Summary</h3>
+                <div class="spec-grid">
+                    <div class="spec-card">
+                        <h3>Patent-Pending Technologies</h3>
+                        <ul class="spec-list">
+                            <li><strong>Asymmetric Dual-Core:</strong> RT + GP core architecture</li>
+                            <li><strong>Hardware Priority Inheritance:</strong> Zero-overhead real-time scheduling</li>
+                            <li><strong>Adaptive Time Slicing:</strong> Workload-aware scheduling</li>
+                            <li><strong>Self-Healing Memory:</strong> Automatic error recovery</li>
+                            <li><strong>Quantum-Ready Crypto:</strong> Post-quantum acceleration</li>
+                        </ul>
+                    </div>
+
+                    <div class="spec-card">
+                        <h3>Market Differentiators</h3>
+                        <ul class="spec-list">
+                            <li><strong>No Competitor:</strong> Only dual-core 8-bit MCU</li>
+                            <li><strong>Real-Time Guarantee:</strong> Hardware-enforced timing</li>
+                            <li><strong>Future-Proof Security:</strong> Quantum-resistant crypto</li>
+                            <li><strong>Edge AI Ready:</strong> On-chip neural acceleration</li>
+                            <li><strong>Fault Tolerant:</strong> Mission-critical reliability</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openTab(evt, tabName) {
+            var i, tabcontent, navtabs;
+            
+            // Hide all tab content
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].classList.remove("active");
+            }
+            
+            // Remove active class from all nav tabs
+            navtabs = document.getElementsByClassName("nav-tab");
+            for (i = 0; i < navtabs.length; i++) {
+                navtabs[i].classList.remove("active");
+            }
+            
+            // Show the selected tab and mark nav tab as active
+            document.getElementById(tabName).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+
+        // Collapsible functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            var coll = document.getElementsByClassName("collapsible");
+            for (let i = 0; i < coll.length; i++) {
+                coll[i].addEventListener("click", function() {
+                    this.classList.toggle("active");
+                    var content = this.nextElementSibling;
+                    content.classList.toggle("show");
+                });
+            }
+        });
+
+        // Add smooth scrolling and animation effects
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add hover effects to cards
+            const cards = document.querySelectorAll('.spec-card');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-5px)';
+                });
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                });
+            });
+        });
+    </script>
+</body>
+</html>
