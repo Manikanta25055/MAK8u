@@ -196,8 +196,9 @@ module clock_management_unit_tb;
                 return;
             end
             
-            // All resets should be asserted after clocks stabilize
-            repeat(5) @(posedge clk_gp_100mhz);
+            // Wait longer for all domain synchronizers to complete
+            // 10MHz domain is slowest, needs more cycles (10x slower than 100MHz)
+            repeat(50) @(posedge clk_gp_100mhz);
             
             if (!rst_n_rt || !rst_n_gp || !rst_n_periph || !rst_n_debug) begin
                 $error("Not all resets synchronized properly");
