@@ -16,7 +16,7 @@
 // Dependencies: None (uses Xilinx primitives)
 // 
 // Revision:
-// Revision 0.01 - File Created
+// Revision 0.02 - Fixed clock cycle counters and reset logic
 // Additional Comments:
 // - RT-Core: 50MHz (deterministic timing)
 // - GP-Core: 100MHz (high performance)
@@ -82,6 +82,9 @@ module clock_management_unit (
     logic        clk_en_gp_int;
     logic        clk_en_periph_int;
     logic        clk_en_debug_int;
+    logic [2:0]  reset_done_rt_sync;
+    logic [2:0]  reset_done_periph_sync; 
+    logic [2:0]  reset_done_debug_sync;
     
     //--------------------------------------------------------------------------
     // MMCM/PLL Clock Generation
@@ -147,46 +150,79 @@ module clock_management_unit (
         end else begin
             if (!reset_counter_done) begin
                 reset_counter <= reset_counter + 1;
-                if (reset_counter == 8'hFF) begin
+                if (reset_counter == 8'h80) begin  
                     reset_counter_done <= 1'b1;
                 end
             end
         end
     end
     
-    // RT-Core reset synchronizer (50MHz domain)
-    always_ff @(posedge clk_rt_50mhz or negedge reset_counter_done) begin
-        if (!reset_counter_done) begin
-            rt_reset_sync <= 3'b000;
+    // Synchronize reset_counter_done to each clock domain
+    always_ff @(posedge clk_rt_50mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
+            reset_done_rt_sync <= 3'b000;
         end else begin
+            reset_done_rt_sync <= {reset_done_rt_sync[1:0], reset_counter_done};
+        end
+    end
+    
+    always_ff @(posedge clk_periph_25mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
+            reset_done_periph_sync <= 3'b000;
+        end else begin
+            reset_done_periph_sync <= {reset_done_periph_sync[1:0], reset_counter_done};
+        end
+    end
+    
+    always_ff @(posedge clk_debug_10mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
+            reset_done_debug_sync <= 3'b000;
+        end else begin
+            reset_done_debug_sync <= {reset_done_debug_sync[1:0], reset_counter_done};
+        end
+    end
+    
+    // RT-Core reset synchronizer (50MHz domain)
+    always_ff @(posedge clk_rt_50mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
+            rt_reset_sync <= 3'b000;
+        end else if (reset_done_rt_sync[2]) begin
             rt_reset_sync <= {rt_reset_sync[1:0], 1'b1};
+        end else begin
+            rt_reset_sync <= 3'b000;
         end
     end
     
     // GP-Core reset synchronizer (100MHz domain)
-    always_ff @(posedge clk_gp_100mhz or negedge reset_counter_done) begin
-        if (!reset_counter_done) begin
+    always_ff @(posedge clk_gp_100mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
             gp_reset_sync <= 3'b000;
-        end else begin
+        end else if (reset_counter_done) begin
             gp_reset_sync <= {gp_reset_sync[1:0], 1'b1};
+        end else begin
+            gp_reset_sync <= 3'b000;
         end
     end
     
     // Peripheral reset synchronizer (25MHz domain)
-    always_ff @(posedge clk_periph_25mhz or negedge reset_counter_done) begin
-        if (!reset_counter_done) begin
+    always_ff @(posedge clk_periph_25mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
             periph_reset_sync <= 3'b000;
-        end else begin
+        end else if (reset_done_periph_sync[2]) begin
             periph_reset_sync <= {periph_reset_sync[1:0], 1'b1};
+        end else begin
+            periph_reset_sync <= 3'b000;
         end
     end
     
     // Debug reset synchronizer (10MHz domain)
-    always_ff @(posedge clk_debug_10mhz or negedge reset_counter_done) begin
-        if (!reset_counter_done) begin
+    always_ff @(posedge clk_debug_10mhz or negedge pll_locked_buf) begin
+        if (!pll_locked_buf) begin
             debug_reset_sync <= 3'b000;
-        end else begin
+        end else if (reset_done_debug_sync[2]) begin
             debug_reset_sync <= {debug_reset_sync[1:0], 1'b1};
+        end else begin
+            debug_reset_sync <= 3'b000;
         end
     end
     
@@ -204,7 +240,7 @@ module clock_management_unit (
     always_ff @(posedge clk_rt_50mhz or negedge rst_n_rt) begin
         if (!rst_n_rt) begin
             rt_counter <= 32'h0;
-        end else if (clk_en_rt) begin
+        end else if (clk_en_rt_int) begin
             rt_counter <= rt_counter + 1;
         end
     end
@@ -212,7 +248,7 @@ module clock_management_unit (
     always_ff @(posedge clk_gp_100mhz or negedge rst_n_gp) begin
         if (!rst_n_gp) begin
             gp_counter <= 32'h0;
-        end else if (clk_en_gp) begin
+        end else if (clk_en_gp_int) begin
             gp_counter <= gp_counter + 1;
         end
     end
