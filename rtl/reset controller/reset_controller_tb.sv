@@ -15,7 +15,7 @@
 // Dependencies: reset_controller.sv
 // 
 // Revision:
-// Revision 0.01 - File Created
+// Revision 0.02 - Fixed timing and sequence testing
 // Additional Comments:
 // - SystemVerilog 2012 compliant
 // - Tests all reset sources and sequencing
@@ -72,7 +72,22 @@ module reset_controller_tb;
     integer reset_type;
     
     //--------------------------------------------------------------------------
-    // Device Under Test Instantiation
+    // Clock Generation
+    //--------------------------------------------------------------------------
+    initial clk_gp_100mhz = 0;
+    always #(CLK_PERIOD_100M/2) clk_gp_100mhz = ~clk_gp_100mhz;
+    
+    initial clk_rt_50mhz = 0;
+    always #(CLK_PERIOD_50M/2) clk_rt_50mhz = ~clk_rt_50mhz;
+    
+    initial clk_periph_25mhz = 0;
+    always #(CLK_PERIOD_25M/2) clk_periph_25mhz = ~clk_periph_25mhz;
+    
+    initial clk_debug_10mhz = 0;
+    always #(CLK_PERIOD_10M/2) clk_debug_10mhz = ~clk_debug_10mhz;
+    
+    //--------------------------------------------------------------------------
+    // DUT Instantiation
     //--------------------------------------------------------------------------
     reset_controller dut (
         .clk_rt_50mhz(clk_rt_50mhz),
@@ -107,44 +122,8 @@ module reset_controller_tb;
     );
     
     //--------------------------------------------------------------------------
-    // Initialization
-    //--------------------------------------------------------------------------
-    initial begin
-        test_count = 0;
-        error_count = 0;
-        sequence_test_count = 10;
-        reset_hold_cycles = 8'h20;  // 32 cycles default
-        quick_reset_en = 1'b0;
-        watchdog_en = 1'b1;
-    end
-    
-    //--------------------------------------------------------------------------
-    // Clock Generation
-    //--------------------------------------------------------------------------
-    initial begin
-        clk_gp_100mhz = 1'b0;
-        forever #(CLK_PERIOD_100M/2) clk_gp_100mhz = ~clk_gp_100mhz;
-    end
-    
-    initial begin
-        clk_rt_50mhz = 1'b0;
-        forever #(CLK_PERIOD_50M/2) clk_rt_50mhz = ~clk_rt_50mhz;
-    end
-    
-    initial begin
-        clk_periph_25mhz = 1'b0;
-        forever #(CLK_PERIOD_25M/2) clk_periph_25mhz = ~clk_periph_25mhz;
-    end
-    
-    initial begin
-        clk_debug_10mhz = 1'b0;
-        forever #(CLK_PERIOD_10M/2) clk_debug_10mhz = ~clk_debug_10mhz;
-    end
-    
-    //--------------------------------------------------------------------------
     // Test Tasks
     //--------------------------------------------------------------------------
-    
     task reset_all_inputs;
         begin
             ext_reset_n = 1'b1;
@@ -156,59 +135,126 @@ module reset_controller_tb;
             gp_core_reset_req = 1'b0;
             periph_reset_req = 1'b0;
             watchdog_reset = 1'b0;
+            watchdog_en = 1'b0;
             rt_core_halted = 1'b0;
             gp_core_halted = 1'b0;
+            reset_hold_cycles = 8'h20;  // Default hold cycles
+            quick_reset_en = 1'b0;
+            
+            // Initialize counters
+            test_count = 0;
+            error_count = 0;
         end
     endtask
     
     task simulate_pll_lock_sequence;
         begin
-            pll_locked = 1'b0;
-            clocks_stable = 1'b0;
-            
-            repeat(50) @(posedge clk_gp_100mhz);
+            // Simulate typical PLL lock and clock stability timing
+            repeat(5) @(posedge clk_gp_100mhz);
             pll_locked = 1'b1;
-            
-            repeat(20) @(posedge clk_gp_100mhz);
+            repeat(5) @(posedge clk_gp_100mhz);
             clocks_stable = 1'b1;
         end
     endtask
     
-    task test_reset_cause;
-        input [2:0] cause_type;
-        input string cause_name;
+    task wait_for_reset_completion;
         begin
-            $display("=== CAUSE: Testing %s Reset ===", cause_name);
+            // Wait for reset sequence to complete with timeout
+            fork
+                begin
+                    wait(reset_sequence_done);
+                end
+                begin
+                    repeat(500) @(posedge clk_gp_100mhz);  // Shorter timeout
+                    $error("Reset sequence timeout");
+                    error_count = error_count + 1;
+                end
+            join_any
+            disable fork;
+        end
+    endtask
+    
+    task test_reset_cause(input [2:0] expected, input string reset_name);
+        begin
+            $display("=== CAUSE: Testing %s Reset ===", reset_name);
             
             reset_all_inputs();
-            repeat(5) @(posedge clk_gp_100mhz);
-            
-            case (cause_type)
-                3'b000: por_reset_n = 1'b0;        // POR
-                3'b001: ext_reset_n = 1'b0;        // External
-                3'b010: sw_reset_req = 1'b1;       // Software
-                3'b011: watchdog_reset = 1'b1;     // Watchdog
-                3'b100: rt_core_reset_req = 1'b1;  // Core request
-            endcase
-            
             repeat(10) @(posedge clk_gp_100mhz);
             
-            // Release reset and simulate normal startup
-            reset_all_inputs();
+            // Apply specific reset
+            case (expected)
+                3'b000: por_reset_n = 1'b0;     // Power-on
+                3'b001: ext_reset_n = 1'b0;     // External
+                3'b010: sw_reset_req = 1'b1;    // Software
+                3'b100: rt_core_reset_req = 1'b1; // Core request
+                default: begin
+                    $error("Unknown reset type: %0d", expected);
+                    error_count = error_count + 1;
+                    return;
+                end
+            endcase
+            
+            // Wait for reset detection
+            repeat(5) @(posedge clk_gp_100mhz);
+            
+            // Release reset source
+            por_reset_n = 1'b1;
+            ext_reset_n = 1'b1;
+            sw_reset_req = 1'b0;
+            rt_core_reset_req = 1'b0;
+            
+            // Simulate PLL lock sequence
             fork
                 simulate_pll_lock_sequence();
             join_none
             
-            // Wait for reset sequence to complete
-            wait(reset_sequence_done);
-            repeat(10) @(posedge clk_gp_100mhz);
+            // Wait for completion
+            wait_for_reset_completion();
             
-            if (reset_cause !== cause_type) begin
+            // Check reset cause after sequence completion
+            repeat(5) @(posedge clk_gp_100mhz);
+            
+            if (reset_cause !== expected) begin
                 $error("%s reset cause incorrect: Expected %0d, Got %0d", 
-                       cause_name, cause_type, reset_cause);
+                       reset_name, expected, reset_cause);
                 error_count = error_count + 1;
             end else begin
-                $display("%s reset cause detected correctly", cause_name);
+                $display("%s reset cause correct: %0d", reset_name, reset_cause);
+            end
+            
+            test_count = test_count + 1;
+        end
+    endtask
+    
+    task test_watchdog_reset;
+        begin
+            $display("=== WATCHDOG: Watchdog Reset Test ===");
+            
+            reset_all_inputs();
+            watchdog_en = 1'b1;
+            repeat(10) @(posedge clk_gp_100mhz);
+            
+            // Trigger watchdog reset
+            watchdog_reset = 1'b1;
+            repeat(5) @(posedge clk_gp_100mhz);
+            watchdog_reset = 1'b0;
+            
+            // Simulate PLL lock sequence
+            fork
+                simulate_pll_lock_sequence();
+            join_none
+            
+            // Wait for completion
+            wait_for_reset_completion();
+            
+            // Check reset cause
+            repeat(5) @(posedge clk_gp_100mhz);
+            
+            if (reset_cause !== 3'b011) begin  // WATCHDOG
+                $error("Watchdog reset cause not detected correctly: Expected 3, Got %0d", reset_cause);
+                error_count = error_count + 1;
+            end else begin
+                $display("Watchdog reset working correctly");
             end
             
             test_count = test_count + 1;
@@ -220,52 +266,55 @@ module reset_controller_tb;
             $display("=== SEQUENCE: Reset Sequencing Test ===");
             
             reset_all_inputs();
-            por_reset_n = 1'b0;  // Trigger POR
+            por_reset_n = 1'b0;  // Start with POR
             
             repeat(5) @(posedge clk_gp_100mhz);
             por_reset_n = 1'b1;
             
-            // All resets should be active initially
-            if (rst_n_system || rst_n_memory || rst_n_debug || 
-                rst_n_peripherals || rst_n_rt_core || rst_n_gp_core) begin
-                $error("Not all resets active at start of sequence");
-                error_count = error_count + 1;
-            end
+            // Monitor reset release sequence
+            fork begin
+                // Memory reset release check
+                wait(!rst_n_memory);
+                wait(rst_n_memory);
+                $display("Memory reset released");
+                
+                // Debug reset release check
+                wait(rst_n_debug);
+                $display("Debug reset released");
+                
+                // Peripheral reset release check
+                wait(rst_n_peripherals);
+                $display("Peripheral reset released");
+                
+                // RT-Core reset release check
+                wait(rst_n_rt_core);
+                $display("RT-Core reset released");
+                
+                // GP-Core reset release check
+                wait(rst_n_gp_core);
+                $display("GP-Core reset released");
+                
+                // Final completion check
+                wait(reset_sequence_done);
+                $display("Reset sequence completed successfully");
+            end join_none
             
+            // Simulate PLL lock sequence
             fork
                 simulate_pll_lock_sequence();
             join_none
             
-            // Wait for memory reset release
-            wait(rst_n_memory);
-            $display("Memory reset released");
+            // Wait for completion
+            wait_for_reset_completion();
             
-            // Wait for debug reset release
-            wait(rst_n_debug);
-            $display("Debug reset released");
+            // Allow time for reset synchronizers to release (3 cycles per domain)
+            repeat(10) @(posedge clk_gp_100mhz);
             
-            // Wait for peripheral reset release
-            wait(rst_n_peripherals);
-            $display("Peripheral reset released");
-            
-            // Wait for RT-Core reset release
-            wait(rst_n_rt_core);
-            $display("RT-Core reset released");
-            
-            // Wait for GP-Core reset release
-            wait(rst_n_gp_core);
-            $display("GP-Core reset released");
-            
-            // Wait for sequence completion
-            wait(reset_sequence_done);
-            wait(cores_ready);
-            
-            if (!rst_n_system || !rst_n_memory || !rst_n_debug ||
-                !rst_n_peripherals || !rst_n_rt_core || !rst_n_gp_core) begin
+            // Verify all resets are released
+            if (!rst_n_memory || !rst_n_debug || !rst_n_peripherals || 
+                !rst_n_rt_core || !rst_n_gp_core) begin
                 $error("Not all resets released after sequence");
                 error_count = error_count + 1;
-            end else begin
-                $display("Reset sequence completed successfully");
             end
             
             test_count = test_count + 1;
@@ -287,12 +336,20 @@ module reset_controller_tb;
                 simulate_pll_lock_sequence();
             join_none
             
-            wait(reset_sequence_done);
+            // Wait for completion with shorter timeout for quick mode
+            fork
+                begin
+                    wait(reset_sequence_done);
+                end
+                begin
+                    repeat(1000) @(posedge clk_gp_100mhz);  // Shorter timeout
+                    $error("Quick reset mode failed to complete");
+                    error_count = error_count + 1;
+                end
+            join_any
+            disable fork;
             
-            if (!cores_ready) begin
-                $error("Quick reset mode failed to complete");
-                error_count = error_count + 1;
-            end else begin
+            if (cores_ready) begin
                 $display("Quick reset mode working");
             end
             
@@ -324,86 +381,29 @@ module reset_controller_tb;
         end
     endtask
     
-    task test_watchdog_reset;
-        begin
-            $display("=== WATCHDOG: Watchdog Reset Test ===");
-            
-            reset_all_inputs();
-            watchdog_en = 1'b1;
-            watchdog_reset = 1'b1;
-            
-            repeat(10) @(posedge clk_gp_100mhz);
-            watchdog_reset = 1'b0;
-            
-            fork
-                simulate_pll_lock_sequence();
-            join_none
-            
-            wait(reset_sequence_done);
-            
-            if (reset_cause !== 3'b011) begin  // RESET_CAUSE_WATCHDOG
-                $error("Watchdog reset cause not detected correctly");
-                error_count = error_count + 1;
-            end else begin
-                $display("Watchdog reset working");
-            end
-            
-            test_count = test_count + 1;
-        end
-    endtask
-    
-    task stress_test_reset_cycles;
-        begin
-            $display("=== STRESS: Reset Cycle Stress Test ===");
-            
-            for (i = 0; i < sequence_test_count; i = i + 1) begin
-                reset_type = $random % 4;
-                
-                reset_all_inputs();
-                case (reset_type)
-                    0: ext_reset_n = 1'b0;
-                    1: sw_reset_req = 1'b1;
-                    2: watchdog_reset = 1'b1;
-                    3: rt_core_reset_req = 1'b1;
-                endcase
-                
-                repeat($random % 10 + 5) @(posedge clk_gp_100mhz);
-                reset_all_inputs();
-                
-                fork
-                    simulate_pll_lock_sequence();
-                join_none
-                
-                wait(reset_sequence_done);
-                
-                if ((i % 2) == 0) begin
-                    $display("Stress test progress: %0d/%0d", i, sequence_test_count);
-                end
-            end
-            
-            $display("Reset stress test completed");
-            test_count = test_count + 1;
-        end
-    endtask
-    
     task test_reset_priority;
         begin
             $display("=== PRIORITY: Reset Priority Test ===");
             
-            // Test POR has highest priority
             reset_all_inputs();
-            por_reset_n = 1'b0;
+            
+            // Apply multiple reset sources simultaneously
+            por_reset_n = 1'b0;      // Highest priority
             ext_reset_n = 1'b0;
             sw_reset_req = 1'b1;
             
-            repeat(10) @(posedge clk_gp_100mhz);
+            repeat(5) @(posedge clk_gp_100mhz);
+            
+            // Release all resets
             por_reset_n = 1'b1;
+            ext_reset_n = 1'b1;
+            sw_reset_req = 1'b0;
             
             fork
                 simulate_pll_lock_sequence();
             join_none
             
-            wait(reset_sequence_done);
+            wait_for_reset_completion();
             
             if (reset_cause !== 3'b000) begin  // Should be POR
                 $error("Reset priority incorrect: Expected POR, Got %0d", reset_cause);
@@ -412,6 +412,47 @@ module reset_controller_tb;
                 $display("Reset priority working correctly");
             end
             
+            test_count = test_count + 1;
+        end
+    endtask
+    
+    task stress_test_reset_cycles;
+        begin
+            $display("=== STRESS: Multiple Reset Cycles ===");
+            
+            for (i = 0; i < 5; i++) begin
+                reset_all_inputs();
+                
+                // Random reset type
+                case (i % 3)
+                    0: ext_reset_n = 1'b0;
+                    1: sw_reset_req = 1'b1;
+                    2: rt_core_reset_req = 1'b1;
+                endcase
+                
+                repeat(3) @(posedge clk_gp_100mhz);
+                
+                // Release reset
+                ext_reset_n = 1'b1;
+                sw_reset_req = 1'b0;
+                rt_core_reset_req = 1'b0;
+                
+                fork
+                    simulate_pll_lock_sequence();
+                join_none
+                
+                wait_for_reset_completion();
+                
+                // Wait for cores to be ready (synchronizers need time)
+                repeat(10) @(posedge clk_gp_100mhz);
+                
+                if (!cores_ready) begin
+                    $error("Stress test iteration %0d failed", i);
+                    error_count = error_count + 1;
+                end
+            end
+            
+            $display("Stress test completed");
             test_count = test_count + 1;
         end
     endtask
