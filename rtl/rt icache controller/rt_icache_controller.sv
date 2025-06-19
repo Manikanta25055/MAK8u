@@ -9,18 +9,18 @@
 // Project Name: MAKu Dual-Core MCU
 // Target Devices: Nexys A7 100T
 // Tool Versions: Vivado 2024.2
-// Description: RT-Core Instruction Cache Controller (2KB)
-//              Direct-mapped cache for deterministic timing
-//              No D-Cache for predictable memory access patterns
+// Description: RT-Core Instruction Cache Controller (2KB) - COMPLETELY REWRITTEN
+//              Simple, functional direct-mapped cache with proper state management
 // 
 // Dependencies: None
 // 
 // Revision:
-// Revision 0.01 - Initial implementation
+// Revision 0.03 - Complete rewrite for functionality
 // Additional Comments:
-// - 2KB cache size, 16-byte lines
-// - Direct-mapped for deterministic timing
-// - Optimized for real-time applications
+// - Simplified state machine
+// - Fixed cache hit detection
+// - Proper fill counter management
+// - Working performance counters
 // 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -57,13 +57,11 @@ module rt_icache_controller (
     //--------------------------------------------------------------------------
     // Cache Configuration (2KB, Direct-Mapped)
     //--------------------------------------------------------------------------
-    localparam CACHE_SIZE_BYTES = 2048;        // 2KB cache
-    localparam LINE_SIZE_BYTES = 16;           // 16-byte cache lines
-    localparam WORDS_PER_LINE = 8;             // 8 x 16-bit words per line
-    localparam CACHE_LINES = 128;              // 2KB / 16 bytes = 128 lines
-    localparam INDEX_BITS = 7;                 // log2(128) = 7 bits
-    localparam OFFSET_BITS = 3;                // log2(8) = 3 bits for word offset
-    localparam TAG_BITS = 6;                   // 16 - 7 - 3 = 6 tag bits
+    localparam CACHE_LINES = 128;              // 128 cache lines
+    localparam WORDS_PER_LINE = 8;             // 8 words per line
+    localparam TAG_BITS = 6;                   // 6 tag bits
+    localparam INDEX_BITS = 7;                 // 7 index bits
+    localparam OFFSET_BITS = 3;                // 3 offset bits
     
     //--------------------------------------------------------------------------
     // Cache Memory Arrays
@@ -79,209 +77,133 @@ module rt_icache_controller (
     logic [INDEX_BITS-1:0] addr_index;
     logic [OFFSET_BITS-1:0] addr_offset;
     
-    assign addr_tag    = cpu_addr[15:10];
-    assign addr_index  = cpu_addr[9:3];
-    assign addr_offset = cpu_addr[2:0];
+    assign addr_tag    = cpu_addr[15:10];      // Bits [15:10]
+    assign addr_index  = cpu_addr[9:3];        // Bits [9:3] 
+    assign addr_offset = cpu_addr[2:0];        // Bits [2:0]
     
     //--------------------------------------------------------------------------
-    // Cache State Machine - More robust with error handling
+    // Simple State Machine
     //--------------------------------------------------------------------------
-    typedef enum logic [3:0] {
-        CACHE_IDLE,
-        CACHE_CHECK,
-        CACHE_MISS,
-        CACHE_FILL,
-        CACHE_READY_STATE,
-        CACHE_FLUSH_STATE,
-        CACHE_ERROR_STATE,
-        CACHE_WAIT_ROM
-    } cache_state_t;
+    typedef enum logic [2:0] {
+        IDLE    = 3'b000,
+        CHECK   = 3'b001,
+        MISS    = 3'b010,
+        FILL    = 3'b011,
+        READY   = 3'b100,
+        FLUSH   = 3'b101
+    } state_t;
     
-    cache_state_t current_state, next_state;
+    state_t state;
     
     //--------------------------------------------------------------------------
-    // Internal Signals - Enhanced for robustness
+    // Internal Signals
     //--------------------------------------------------------------------------
-    logic cache_hit;
-    logic cache_miss;
-    logic [2:0] fill_counter;
-    logic [15:0] fill_base_addr;
+    logic is_hit;
+    logic is_miss;
+    logic [2:0] fill_word_count;
+    logic [15:0] fill_addr_base;
     logic [31:0] hit_count_reg;
     logic [31:0] miss_count_reg;
-    logic [31:0] total_accesses_reg;
-    logic [7:0] rom_timeout_counter;
-    logic rom_timeout;
-    logic fill_complete;
-    logic flush_in_progress;
+    logic [31:0] total_count_reg;
+    logic [6:0] flush_line_count;
+    logic access_was_hit;  // Track if current access was originally a hit
     
     //--------------------------------------------------------------------------
-    // Enhanced Cache Hit Detection with edge case handling
+    // Cache Hit/Miss Detection
     //--------------------------------------------------------------------------
     always_comb begin
-        cache_hit = cache_valid[addr_index] && 
-                   (cache_tags[addr_index] == addr_tag) && 
-                   cache_enable && !flush_in_progress;
-        cache_miss = cpu_req && !cache_hit && cache_enable && !flush_in_progress;
-        fill_complete = (fill_counter == 3'd7) && rom_ready;
-        rom_timeout = (rom_timeout_counter > 8'd100); // Timeout after 100 cycles
+        is_hit = cache_valid[addr_index] && 
+                 (cache_tags[addr_index] == addr_tag) && 
+                 cache_enable;
+        is_miss = cpu_req && !is_hit && cache_enable;
     end
     
     //--------------------------------------------------------------------------
-    // Robust State Machine with timeout and error handling
+    // Main State Machine
     //--------------------------------------------------------------------------
     always_ff @(posedge clk_rt_50mhz or negedge rst_n) begin
         if (!rst_n) begin
-            current_state <= CACHE_IDLE;
+            state <= IDLE;
+            fill_word_count <= 3'h0;
+            fill_addr_base <= 16'h0;
+            flush_line_count <= 7'h0;
+            access_was_hit <= 1'b0;
         end else begin
-            current_state <= next_state;
-        end
-    end
-    
-    always_comb begin
-        next_state = current_state;
-        case (current_state)
-            CACHE_IDLE: begin
-                if (cache_flush) begin
-                    next_state = CACHE_FLUSH_STATE;
-                end else if (cpu_req && cache_enable) begin
-                    next_state = CACHE_CHECK;
-                end
-            end
-            
-            CACHE_CHECK: begin
-                if (cache_hit) begin
-                    next_state = CACHE_READY_STATE;
-                end else if (cache_miss) begin
-                    next_state = CACHE_MISS;
-                end else begin
-                    next_state = CACHE_IDLE;
-                end
-            end
-            
-            CACHE_MISS: begin
-                next_state = CACHE_FILL;
-            end
-            
-            CACHE_FILL: begin
-                if (rom_timeout) begin
-                    next_state = CACHE_ERROR_STATE;
-                end else if (fill_complete) begin
-                    next_state = CACHE_READY_STATE;
-                end else if (!rom_req) begin
-                    next_state = CACHE_WAIT_ROM;
-                end
-            end
-            
-            CACHE_WAIT_ROM: begin
-                if (rom_timeout) begin
-                    next_state = CACHE_ERROR_STATE;
-                end else if (rom_ready) begin
-                    next_state = CACHE_FILL;
-                end
-            end
-            
-            CACHE_READY_STATE: begin
-                if (cache_flush) begin
-                    next_state = CACHE_FLUSH_STATE;
-                end else if (!cpu_req) begin
-                    next_state = CACHE_IDLE;
-                end
-            end
-            
-            CACHE_FLUSH_STATE: begin
-                next_state = CACHE_IDLE;
-            end
-            
-            CACHE_ERROR_STATE: begin
-                // Stay in error state until reset or flush
-                if (cache_flush) begin
-                    next_state = CACHE_FLUSH_STATE;
-                end
-            end
-        endcase
-    end
-    
-    //--------------------------------------------------------------------------
-    // Enhanced Cache Fill Logic with timeout and error handling
-    //--------------------------------------------------------------------------
-    always_ff @(posedge clk_rt_50mhz or negedge rst_n) begin
-        if (!rst_n) begin
-            fill_counter <= 3'h0;
-            fill_base_addr <= 16'h0;
-            rom_timeout_counter <= 8'h0;
-            flush_in_progress <= 1'b0;
-        end else begin
-            case (current_state)
-                CACHE_MISS: begin
-                    fill_counter <= 3'h0;
-                    fill_base_addr <= {cpu_addr[15:3], 3'h0}; // Align to cache line
-                    rom_timeout_counter <= 8'h0;
+            case (state)
+                IDLE: begin
+                    access_was_hit <= 1'b0;
+                    if (cache_flush) begin
+                        state <= FLUSH;
+                        flush_line_count <= 7'h0;
+                    end else if (cpu_req && cache_enable) begin
+                        state <= CHECK;
+                    end
                 end
                 
-                CACHE_FILL, CACHE_WAIT_ROM: begin
-                    // Increment timeout counter
-                    if (rom_timeout_counter < 8'd255) begin
-                        rom_timeout_counter <= rom_timeout_counter + 1;
+                CHECK: begin
+                    access_was_hit <= is_hit;  // Record if this access was a hit
+                    if (is_hit) begin
+                        state <= READY;
+                    end else if (is_miss) begin
+                        state <= MISS;
+                        fill_word_count <= 3'h0;
+                        fill_addr_base <= {cpu_addr[15:3], 3'b000}; // Line-aligned
+                    end else begin
+                        state <= IDLE;
                     end
-                    
-                    if (rom_ready && !rom_timeout) begin
-                        cache_data[addr_index][fill_counter] <= rom_data;
-                        fill_counter <= fill_counter + 1;
-                        rom_timeout_counter <= 8'h0; // Reset timeout on progress
-                        
-                        // Update cache metadata on last word
-                        if (fill_counter == 3'd7) begin
-                            cache_tags[addr_index] <= addr_tag;
+                end
+                
+                MISS: begin
+                    state <= FILL;
+                end
+                
+                FILL: begin
+                    if (rom_ready) begin
+                        cache_data[addr_index][fill_word_count] <= rom_data;
+                        if (fill_word_count == 3'd7) begin
+                            // Line fill complete
                             cache_valid[addr_index] <= 1'b1;
+                            cache_tags[addr_index] <= addr_tag;
+                            state <= READY;
+                        end else begin
+                            fill_word_count <= fill_word_count + 1;
                         end
                     end
+                    // Stay in FILL until ROM responds
                 end
                 
-                CACHE_FLUSH_STATE: begin
-                    flush_in_progress <= 1'b1;
-                    // Invalidate all cache lines robustly
-                    for (int i = 0; i < CACHE_LINES; i++) begin
-                        cache_valid[i] <= 1'b0;
-                        cache_tags[i] <= {TAG_BITS{1'b0}};
+                READY: begin
+                    if (!cpu_req) begin
+                        state <= IDLE;
                     end
                 end
                 
-                CACHE_ERROR_STATE: begin
-                    // Mark current line as invalid on timeout
-                    cache_valid[addr_index] <= 1'b0;
-                    rom_timeout_counter <= 8'h0;
-                end
-                
-                default: begin
-                    flush_in_progress <= 1'b0;
-                    rom_timeout_counter <= 8'h0;
+                FLUSH: begin
+                    cache_valid[flush_line_count] <= 1'b0;
+                    if (flush_line_count == 7'd127) begin
+                        state <= IDLE;
+                    end else begin
+                        flush_line_count <= flush_line_count + 1;
+                    end
                 end
             endcase
         end
     end
     
     //--------------------------------------------------------------------------
-    // ROM Interface  
+    // ROM Interface
     //--------------------------------------------------------------------------
-    always_comb begin
-        rom_req = (current_state == CACHE_FILL);
-        rom_addr = fill_base_addr + {13'h0, fill_counter};
-    end
+    assign rom_req = (state == FILL);
+    assign rom_addr = fill_addr_base + {13'h0, fill_word_count};
     
     //--------------------------------------------------------------------------
     // CPU Interface
     //--------------------------------------------------------------------------
-    always_comb begin
-        cpu_ready = (current_state == CACHE_READY_STATE);
-        cpu_hit = cache_hit && (current_state == CACHE_READY_STATE);
-        cache_ready = (current_state == CACHE_IDLE);
-        
-        if (cache_hit && (current_state == CACHE_READY_STATE)) begin
-            cpu_data = cache_data[addr_index][addr_offset];
-        end else begin
-            cpu_data = 16'h0000; // NOP during miss
-        end
-    end
+    assign cpu_ready = (state == READY);
+    assign cpu_hit = access_was_hit && (state == READY);  // Use recorded hit status
+    assign cache_ready = (state == IDLE);
+    assign cpu_data = (state == READY) ? 
+                      cache_data[addr_index][addr_offset] : 16'h0000;
     
     //--------------------------------------------------------------------------
     // Performance Counters
@@ -290,34 +212,27 @@ module rt_icache_controller (
         if (!rst_n) begin
             hit_count_reg <= 32'h0;
             miss_count_reg <= 32'h0;
-            total_accesses_reg <= 32'h0;
+            total_count_reg <= 32'h0;
         end else begin
-            if (current_state == CACHE_CHECK) begin
-                total_accesses_reg <= total_accesses_reg + 1;
-                if (cache_hit) begin
+            if (state == CHECK && cpu_req) begin
+                total_count_reg <= total_count_reg + 1;
+                if (is_hit) begin
                     hit_count_reg <= hit_count_reg + 1;
-                end else if (cache_miss) begin
+                end else begin
                     miss_count_reg <= miss_count_reg + 1;
                 end
             end
         end
     end
     
-    // Calculate hit rate percentage
-    always_comb begin
-        if (total_accesses_reg == 0) begin
-            hit_rate_percent = 8'd0;
-        end else begin
-            hit_rate_percent = (hit_count_reg * 100) / total_accesses_reg;
-        end
-    end
-    
     assign hit_count = hit_count_reg;
     assign miss_count = miss_count_reg;
-    assign total_accesses = total_accesses_reg;
+    assign total_accesses = total_count_reg;
+    assign hit_rate_percent = (total_count_reg > 0) ? 
+                             (hit_count_reg * 100 / total_count_reg) : 8'h0;
     
     //--------------------------------------------------------------------------
-    // Cache Initialization
+    // Initialize Cache
     //--------------------------------------------------------------------------
     initial begin
         for (int i = 0; i < CACHE_LINES; i++) begin
@@ -330,25 +245,29 @@ module rt_icache_controller (
     end
     
     //--------------------------------------------------------------------------
-    // Simulation Debug
+    // Debug Output
     //--------------------------------------------------------------------------
     // synthesis translate_off
     always @(posedge clk_rt_50mhz) begin
-        if (current_state == CACHE_CHECK && cache_hit) begin
-            $display("RT I-Cache HIT: Addr=0x%04X, Data=0x%04X, Line=%0d", 
-                    cpu_addr, cpu_data, addr_index);
-        end else if (current_state == CACHE_MISS) begin
+        if (state == CHECK && is_hit) begin
+            $display("RT I-Cache HIT: Addr=0x%04X, Tag=%0d, Index=%0d, Data=0x%04X", 
+                     cpu_addr, addr_tag, addr_index, cache_data[addr_index][addr_offset]);
+        end
+        if (state == CHECK && is_miss) begin
             $display("RT I-Cache MISS: Addr=0x%04X, Tag=%0d, Index=%0d", 
-                    cpu_addr, addr_tag, addr_index);
+                     cpu_addr, addr_tag, addr_index);
+        end
+        if (state == FILL && rom_ready) begin
+            $display("RT I-Cache FILL: Index=%0d, Word=%0d, Data=0x%04X", 
+                     addr_index, fill_word_count, rom_data);
         end
     end
     
     initial begin
-        $display("RT-Core I-Cache Configuration:");
+        $display("RT I-Cache Controller Configuration:");
         $display("  Cache Size: 2KB (%0d lines x %0d words)", CACHE_LINES, WORDS_PER_LINE);
-        $display("  Line Size: %0d bytes", LINE_SIZE_BYTES);
         $display("  Tag bits: %0d, Index bits: %0d, Offset bits: %0d", 
-                TAG_BITS, INDEX_BITS, OFFSET_BITS);
+                 TAG_BITS, INDEX_BITS, OFFSET_BITS);
     end
     // synthesis translate_on
 
