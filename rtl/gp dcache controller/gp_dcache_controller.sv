@@ -23,6 +23,7 @@
 // - Write-back and write-through support
 // - Cache coherency with invalidation
 // - Advanced performance monitoring
+// - Fixed address breakdown and flush logic
 // 
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -32,9 +33,9 @@ module gp_dcache_controller #(
     parameter CACHE_SIZE = 2048,                // 2KB cache
     parameter WORDS_PER_LINE = 4,               // 4 words per cache line
     parameter CACHE_LINES = 128,                // 128 cache lines
-    parameter TAG_BITS = 24,                    // 24 tag bits (32-7-2=23, +1 for safety)
-    parameter INDEX_BITS = 7,                   // 7 index bits
-    parameter OFFSET_BITS = 2                   // 2 offset bits (4 words = 2^2)
+    parameter TAG_BITS = 24,                    // 24 tag bits (testbench override)
+    parameter INDEX_BITS = 7,                   // 7 index bits for 128 lines
+    parameter OFFSET_BITS = 2                   // 2 offset bits for 4 words
 )(
     // Clock and Reset
     input  logic                    clk_gp_100mhz,
@@ -99,26 +100,30 @@ module gp_dcache_controller #(
     (* ram_style = "distributed" *) logic cache_dirty [0:CACHE_LINES-1];
     
     //--------------------------------------------------------------------------
-    // Address Breakdown Functions
+    // Address Breakdown Functions - FIXED FOR 128 CACHE LINES
     //--------------------------------------------------------------------------
     function automatic logic [TAG_BITS-1:0] get_tag(input logic [ADDR_WIDTH-1:0] addr);
-        return addr[ADDR_WIDTH-1:INDEX_BITS+OFFSET_BITS];
+        // Use upper bits for tag to ensure compatibility
+        return addr[31:11];  // Take upper 21 bits, extend to 24 bits with zeros
     endfunction
     
     function automatic logic [INDEX_BITS-1:0] get_index(input logic [ADDR_WIDTH-1:0] addr);
-        return addr[INDEX_BITS+OFFSET_BITS-1:OFFSET_BITS];
+        // Use bits [10:4] for 7-bit index to support 128 cache lines
+        return addr[10:4];
     endfunction
     
     function automatic logic [OFFSET_BITS-1:0] get_offset(input logic [ADDR_WIDTH-1:0] addr);
-        return addr[OFFSET_BITS-1:0];
+        // Use bits [3:2] for word offset within cache line
+        return addr[3:2];
     endfunction
     
     function automatic logic [ADDR_WIDTH-1:0] get_line_addr(input logic [ADDR_WIDTH-1:0] addr);
-        return {addr[ADDR_WIDTH-1:OFFSET_BITS], {OFFSET_BITS{1'b0}}};
+        // Align to 16-byte cache line boundary
+        return {addr[31:4], 4'b0000};
     endfunction
     
     //--------------------------------------------------------------------------
-    // Internal Signals
+    // Internal Signals - ALL DECLARED AT TOP
     //--------------------------------------------------------------------------
     // Address breakdown
     logic [TAG_BITS-1:0]   addr_tag;
@@ -152,9 +157,12 @@ module gp_dcache_controller #(
     logic [TAG_BITS-1:0] fill_tag;
     logic [INDEX_BITS-1:0] wb_index;
     logic need_writeback;
+    logic flush_writeback_active;
     
-    // Flush control
+    // Flush control - FIXED SIZE
     logic [INDEX_BITS-1:0] flush_line_count;
+    logic flush_active;
+    logic flush_complete;
     
     // Performance counters
     logic [31:0] read_hit_count_reg;
@@ -170,6 +178,19 @@ module gp_dcache_controller #(
     logic access_was_write;
     logic [DATA_WIDTH-1:0] write_data_reg;
     logic [3:0] byte_enable_reg;
+    logic [ADDR_WIDTH-1:0] saved_cpu_addr;
+    logic [DATA_WIDTH-1:0] saved_cpu_wdata;
+    logic [TAG_BITS-1:0] saved_addr_tag;
+    logic [INDEX_BITS-1:0] saved_addr_index;
+    logic [OFFSET_BITS-1:0] saved_addr_offset;
+    
+    // Request handling
+    logic req_in_progress;
+    logic write_pending;
+    
+    // Flush edge detection
+    logic cache_flush_d1;
+    logic flush_start;
     
     //--------------------------------------------------------------------------
     // Address Breakdown Assignment
@@ -187,8 +208,8 @@ module gp_dcache_controller #(
         // Cache hit detection
         is_hit = cache_valid[addr_index] && 
                  (cache_tags[addr_index] == addr_tag) && 
-                 cache_enable;
-        is_miss = cpu_req && !is_hit && cache_enable;
+                 cache_enable && (state == IDLE);
+        is_miss = cpu_req && !is_hit && cache_enable && (state == IDLE);
         
         // Coherency hit detection
         coherency_match = cache_valid[get_index(coherency_addr)] && 
@@ -196,7 +217,62 @@ module gp_dcache_controller #(
     end
     
     //--------------------------------------------------------------------------
-    // Main State Machine
+    // Flush Edge Detection
+    //--------------------------------------------------------------------------
+    always_ff @(posedge clk_gp_100mhz or negedge rst_n) begin
+        if (!rst_n) begin
+            cache_flush_d1 <= 1'b0;
+        end else begin
+            cache_flush_d1 <= cache_flush;
+        end
+    end
+    
+    assign flush_start = cache_flush && !cache_flush_d1;
+    assign flush_complete = (flush_line_count == CACHE_LINES-1) && 
+                           (state == FLUSH) && 
+                           (!cache_valid[flush_line_count] || 
+                            !cache_dirty[flush_line_count] || 
+                            write_through_mode || 
+                            !flush_writeback_active);
+    
+    //--------------------------------------------------------------------------
+    // RAM Interface Logic
+    //--------------------------------------------------------------------------
+    always_comb begin
+        // Default values
+        ram_req = 1'b0;
+        ram_we = 1'b0;
+        ram_addr = {ADDR_WIDTH{1'b0}};
+        ram_wdata = {DATA_WIDTH{1'b0}};
+        
+        case (state)
+            FILL: begin
+                ram_req = 1'b1;
+                ram_we = 1'b0;
+                ram_addr = fill_addr_base + (fill_word_count << 2);
+            end
+            
+            WRITEBACK: begin
+                ram_req = 1'b1;
+                ram_we = 1'b1;
+                ram_addr = wb_addr_base + (wb_word_count << 2);
+                ram_wdata = cache_data[wb_index][wb_word_count];
+            end
+            
+            default: begin
+                if (!cache_enable) begin
+                    // Pass-through mode when cache disabled
+                    ram_req = cpu_req;
+                    ram_we = cpu_we;
+                    ram_addr = cpu_addr;
+                    ram_wdata = cpu_wdata;
+                end
+            end
+        endcase
+    end
+    
+    //--------------------------------------------------------------------------
+    // Main State Machine - FIXED FLUSH LOGIC
     //--------------------------------------------------------------------------
     always_ff @(posedge clk_gp_100mhz or negedge rst_n) begin
         if (!rst_n) begin
@@ -214,61 +290,85 @@ module gp_dcache_controller #(
             write_data_reg <= {DATA_WIDTH{1'b0}};
             byte_enable_reg <= 4'h0;
             need_writeback <= 1'b0;
+            flush_writeback_active <= 1'b0;
+            flush_active <= 1'b0;
+            saved_cpu_addr <= {ADDR_WIDTH{1'b0}};
+            saved_cpu_wdata <= {DATA_WIDTH{1'b0}};
+            saved_addr_tag <= {TAG_BITS{1'b0}};
+            saved_addr_index <= {INDEX_BITS{1'b0}};
+            saved_addr_offset <= {OFFSET_BITS{1'b0}};
+            req_in_progress <= 1'b0;
+            write_pending <= 1'b0;
         end else begin
             case (state)
                 IDLE: begin
+                    req_in_progress <= 1'b0;
                     access_was_hit <= 1'b0;
                     access_was_write <= 1'b0;
                     need_writeback <= 1'b0;
+                    flush_writeback_active <= 1'b0;
+                    write_pending <= 1'b0;
                     
                     if (!cache_enable) begin
                         // Cache disabled - stay in IDLE
                         state <= IDLE;
-                    end else if (cache_flush) begin
+                    end else if (flush_start) begin
+                        // Start flush operation
                         state <= FLUSH;
                         flush_line_count <= {INDEX_BITS{1'b0}};
+                        flush_active <= 1'b1;
                     end else if (cache_invalidate) begin
                         state <= INVALIDATE;
                     end else if (coherency_invalidate && coherency_match) begin
                         state <= INVALIDATE;
                     end else if (cpu_req && cache_enable) begin
                         state <= CHECK;
+                        req_in_progress <= 1'b1;
+                        // Save current request
+                        saved_cpu_addr <= cpu_addr;
+                        saved_cpu_wdata <= cpu_wdata;
+                        saved_addr_tag <= addr_tag;
+                        saved_addr_index <= addr_index;
+                        saved_addr_offset <= addr_offset;
                         access_was_write <= cpu_we;
                         write_data_reg <= cpu_wdata;
                         byte_enable_reg <= cpu_be;
+                        if (cpu_we) begin
+                            write_pending <= 1'b1;
+                        end
                     end
                 end
                 
                 CHECK: begin
-                    if (is_hit) begin
+                    // Use saved addresses for hit detection after transition
+                    if (cache_valid[saved_addr_index] && 
+                        (cache_tags[saved_addr_index] == saved_addr_tag)) begin
                         // Cache hit
                         access_was_hit <= 1'b1;
                         state <= READY;
-                    end else if (is_miss) begin
-                        // Cache miss - check if writeback needed
+                    end else begin
+                        // Cache miss
                         access_was_hit <= 1'b0;
-                        if (cache_valid[addr_index] && cache_dirty[addr_index] && !write_through_mode) begin
+                        if (cache_valid[saved_addr_index] && cache_dirty[saved_addr_index] && !write_through_mode) begin
                             // Need writeback first
                             need_writeback <= 1'b1;
-                            wb_index <= addr_index;
-                            wb_addr_base <= {cache_tags[addr_index], addr_index, {OFFSET_BITS{1'b0}}};
+                            wb_index <= saved_addr_index;
+                            wb_addr_base <= {cache_tags[saved_addr_index], saved_addr_index, 4'b0000};
                             wb_word_count <= 2'h0;
                             state <= WRITEBACK;
                         end else begin
                             // Direct to fill
                             state <= MISS;
                         end
-                    end else begin
-                        state <= IDLE;
                     end
                 end
                 
                 MISS: begin
                     state <= FILL;
                     fill_word_count <= 2'h0;
-                    fill_addr_base <= get_line_addr(cpu_addr);
-                    fill_index <= addr_index;
-                    fill_tag <= addr_tag;
+                    fill_addr_base <= get_line_addr(saved_cpu_addr);
+                    fill_index <= saved_addr_index;
+                    fill_tag <= saved_addr_tag;
                 end
                 
                 FILL: begin
@@ -291,7 +391,15 @@ module gp_dcache_controller #(
                         if (wb_word_count == 2'd3) begin
                             // Writeback complete
                             cache_dirty[wb_index] <= 1'b0;
-                            state <= MISS;
+                            if (flush_writeback_active) begin
+                                // Continue with flush
+                                cache_valid[wb_index] <= 1'b0;
+                                flush_writeback_active <= 1'b0;
+                                state <= FLUSH;
+                            end else begin
+                                // Continue with miss handling
+                                state <= MISS;
+                            end
                         end else begin
                             wb_word_count <= wb_word_count + 1;
                         end
@@ -301,24 +409,37 @@ module gp_dcache_controller #(
                 READY: begin
                     if (!cpu_req) begin
                         state <= IDLE;
+                        req_in_progress <= 1'b0;
+                        write_pending <= 1'b0;
                     end
                 end
                 
                 FLUSH: begin
-                    if (cache_valid[flush_line_count] && cache_dirty[flush_line_count] && !write_through_mode) begin
-                        // Need to writeback dirty line
-                        wb_index <= flush_line_count;
-                        wb_addr_base <= {cache_tags[flush_line_count], flush_line_count, {OFFSET_BITS{1'b0}}};
-                        wb_word_count <= 2'h0;
-                        state <= WRITEBACK;
+                    if (flush_complete) begin
+                        // Flush operation complete
+                        flush_active <= 1'b0;
+                        state <= IDLE;
                     end else begin
-                        // Clear the line
-                        cache_valid[flush_line_count] <= 1'b0;
-                        cache_dirty[flush_line_count] <= 1'b0;
-                        if (flush_line_count == (CACHE_LINES-1)) begin
-                            state <= IDLE;
+                        if (cache_valid[flush_line_count] && cache_dirty[flush_line_count] && !write_through_mode) begin
+                            // Need to writeback dirty line
+                            wb_index <= flush_line_count;
+                            wb_addr_base <= {cache_tags[flush_line_count], flush_line_count, 4'b0000};
+                            wb_word_count <= 2'h0;
+                            flush_writeback_active <= 1'b1;
+                            state <= WRITEBACK;
                         end else begin
+                            // Clear the line
+                            cache_valid[flush_line_count] <= 1'b0;
+                            cache_dirty[flush_line_count] <= 1'b0;
+                        end
+                        
+                        // Always increment line counter
+                        if (flush_line_count < CACHE_LINES-1) begin
                             flush_line_count <= flush_line_count + 1;
+                        end else begin
+                            // All lines processed
+                            flush_active <= 1'b0;
+                            state <= IDLE;
                         end
                     end
                 end
@@ -339,80 +460,45 @@ module gp_dcache_controller #(
     end
     
     //--------------------------------------------------------------------------
-    // Cache Data Update Logic
+    // Cache Data Update Logic (Write Operations)
     //--------------------------------------------------------------------------
     always_ff @(posedge clk_gp_100mhz) begin
-        if (state == READY && access_was_hit && access_was_write) begin
-            // Write hit - update cache data
-            for (int i = 0; i < 4; i++) begin
-                if (byte_enable_reg[i]) begin
-                    cache_data[addr_index][addr_offset][i*8 +: 8] <= write_data_reg[i*8 +: 8];
-                end
-            end
+        if (state == READY && write_pending) begin
+            // Apply write data
+            if (byte_enable_reg[0]) cache_data[saved_addr_index][saved_addr_offset][7:0]   <= write_data_reg[7:0];
+            if (byte_enable_reg[1]) cache_data[saved_addr_index][saved_addr_offset][15:8]  <= write_data_reg[15:8];
+            if (byte_enable_reg[2]) cache_data[saved_addr_index][saved_addr_offset][23:16] <= write_data_reg[23:16];
+            if (byte_enable_reg[3]) cache_data[saved_addr_index][saved_addr_offset][31:24] <= write_data_reg[31:24];
             
-            if (write_through_mode) begin
-                // Write-through: keep clean
-                cache_dirty[addr_index] <= 1'b0;
-            end else begin
-                // Write-back: mark dirty
-                cache_dirty[addr_index] <= 1'b1;
+            // Mark as dirty unless in write-through mode
+            if (!write_through_mode) begin
+                cache_dirty[saved_addr_index] <= 1'b1;
             end
         end
     end
     
     //--------------------------------------------------------------------------
-    // RAM Interface
+    // Output Logic
     //--------------------------------------------------------------------------
     always_comb begin
-        case (state)
-            FILL: begin
-                ram_req = 1'b1;
-                ram_we = 1'b0;
-                ram_addr = fill_addr_base + {{(ADDR_WIDTH-2){1'b0}}, fill_word_count};
-                ram_wdata = {DATA_WIDTH{1'b0}};
-            end
+        if (cache_enable) begin
+            cpu_ready = (state == READY);
+            cpu_hit = access_was_hit && (state == READY);
             
-            WRITEBACK: begin
-                ram_req = 1'b1;
-                ram_we = 1'b1;
-                ram_addr = wb_addr_base + {{(ADDR_WIDTH-2){1'b0}}, wb_word_count};
-                ram_wdata = cache_data[wb_index][wb_word_count];
+            if (state == READY) begin
+                cpu_rdata = cache_data[saved_addr_index][saved_addr_offset];
+            end else begin
+                cpu_rdata = {DATA_WIDTH{1'b0}};
             end
-            
-            default: begin
-                ram_req = 1'b0;
-                ram_we = 1'b0;
-                ram_addr = {ADDR_WIDTH{1'b0}};
-                ram_wdata = {DATA_WIDTH{1'b0}};
-                
-                // Write-through mode direct RAM access
-                if (cache_enable && write_through_mode && 
-                    state == READY && access_was_hit && access_was_write) begin
-                    ram_req = 1'b1;
-                    ram_we = 1'b1;
-                    ram_addr = cpu_addr;
-                    ram_wdata = cpu_wdata;
-                end else if (!cache_enable && cpu_req) begin
-                    // Cache disabled - direct RAM access
-                    ram_req = 1'b1;
-                    ram_we = cpu_we;
-                    ram_addr = cpu_addr;
-                    ram_wdata = cpu_wdata;
-                end
-            end
-        endcase
+        end else begin
+            // Pass-through mode when cache disabled
+            cpu_ready = ram_ready;
+            cpu_hit = 1'b0;
+            cpu_rdata = ram_rdata;
+        end
     end
     
-    //--------------------------------------------------------------------------
-    // CPU Interface Outputs
-    //--------------------------------------------------------------------------
-    assign cpu_ready = cache_enable ? (state == READY) : ram_ready;
-    assign cpu_hit = cache_enable ? (access_was_hit && (state == READY)) : 1'b0;
-    assign cpu_rdata = cache_enable ? 
-                       ((state == READY && access_was_hit) ? cache_data[addr_index][addr_offset] : {DATA_WIDTH{1'b0}}) :
-                       ram_rdata;
-    
-    assign cache_ready = (state == IDLE);
+    assign cache_ready = (state == IDLE) && !flush_active;
     assign coherency_hit = coherency_match;
     assign writeback_pending = (state == WRITEBACK) || need_writeback;
     
@@ -428,16 +514,17 @@ module gp_dcache_controller #(
             total_count_reg <= 32'h0;
             writeback_count_reg <= 32'h0;
         end else begin
-            if (state == CHECK && cpu_req && cache_enable) begin
+            // Count when transitioning to READY state
+            if (state == READY && req_in_progress) begin
                 total_count_reg <= total_count_reg + 1;
-                if (is_hit) begin
-                    if (cpu_we) begin
+                if (access_was_hit) begin
+                    if (access_was_write) begin
                         write_hit_count_reg <= write_hit_count_reg + 1;
                     end else begin
                         read_hit_count_reg <= read_hit_count_reg + 1;
                     end
-                end else if (is_miss) begin
-                    if (cpu_we) begin
+                end else begin
+                    if (access_was_write) begin
                         write_miss_count_reg <= write_miss_count_reg + 1;
                     end else begin
                         read_miss_count_reg <= read_miss_count_reg + 1;
@@ -445,6 +532,7 @@ module gp_dcache_controller #(
                 end
             end
             
+            // Count writebacks
             if (state == WRITEBACK && ram_ready && wb_word_count == 2'd3) begin
                 writeback_count_reg <= writeback_count_reg + 1;
             end
@@ -468,7 +556,7 @@ module gp_dcache_controller #(
     end
     
     //--------------------------------------------------------------------------
-    // Output Assignments
+    // Performance Output Assignments
     //--------------------------------------------------------------------------
     assign read_hit_count = read_hit_count_reg;
     assign write_hit_count = write_hit_count_reg;
@@ -477,9 +565,9 @@ module gp_dcache_controller #(
     assign total_accesses = total_count_reg;
     assign writeback_count = writeback_count_reg;
     assign hit_rate_percent = (total_count_reg > 0) ? 
-                              ((read_hit_count_reg + write_hit_count_reg) * 100 / total_count_reg) : 8'h0;
-    assign cache_utilization = (CACHE_LINES > 0) ? 
-                               ((valid_lines_count * 100) / CACHE_LINES) : 8'h0;
+                             ((read_hit_count_reg + write_hit_count_reg) * 100 / total_count_reg) : 8'h0;
+    assign cache_utilization = (CACHE_LINES > 0) ?
+                              ((valid_lines_count * 100) / CACHE_LINES) : 8'h0;
     
     // Debug outputs
     assign debug_index = addr_index;
@@ -507,31 +595,35 @@ module gp_dcache_controller #(
     //--------------------------------------------------------------------------
     // synthesis translate_off
     always @(posedge clk_gp_100mhz) begin
-        if (state == CHECK && is_hit) begin
-            if (access_was_write) begin
-                $display("GP D-Cache WRITE HIT: Addr=0x%08X, Data=0x%08X, Index=%0d", 
-                         cpu_addr, cpu_wdata, addr_index);
+        if (state == CHECK) begin
+            if (cache_valid[saved_addr_index] && (cache_tags[saved_addr_index] == saved_addr_tag)) begin
+                if (access_was_write) begin
+                    $display("GP D-Cache WRITE HIT: Addr=0x%08X, Data=0x%08X, Index=%0d, Tag=0x%05X", 
+                             saved_cpu_addr, saved_cpu_wdata, saved_addr_index, saved_addr_tag);
+                end else begin
+                    $display("GP D-Cache READ HIT: Addr=0x%08X, Data=0x%08X, Index=%0d, Tag=0x%05X", 
+                             saved_cpu_addr, cache_data[saved_addr_index][saved_addr_offset], saved_addr_index, saved_addr_tag);
+                end
             end else begin
-                $display("GP D-Cache READ HIT: Addr=0x%08X, Data=0x%08X, Index=%0d", 
-                         cpu_addr, cache_data[addr_index][addr_offset], addr_index);
-            end
-        end
-        if (state == CHECK && is_miss) begin
-            if (access_was_write) begin
-                $display("GP D-Cache WRITE MISS: Addr=0x%08X, Data=0x%08X, Index=%0d", 
-                         cpu_addr, cpu_wdata, addr_index);
-            end else begin
-                $display("GP D-Cache READ MISS: Addr=0x%08X, Index=%0d", 
-                         cpu_addr, addr_index);
+                if (access_was_write) begin
+                    $display("GP D-Cache WRITE MISS: Addr=0x%08X, Data=0x%08X, Index=%0d, Tag=0x%05X", 
+                             saved_cpu_addr, saved_cpu_wdata, saved_addr_index, saved_addr_tag);
+                end else begin
+                    $display("GP D-Cache READ MISS: Addr=0x%08X, Index=%0d, Tag=0x%05X", 
+                             saved_cpu_addr, saved_addr_index, saved_addr_tag);
+                end
             end
         end
         if (state == FILL && ram_ready) begin
-            $display("GP D-Cache FILL: Index=%0d, Word=%0d, Data=0x%08X", 
-                     fill_index, fill_word_count, ram_rdata);
+            $display("GP D-Cache FILL: Index=%0d, Word=%0d, Addr=0x%08X, Data=0x%08X", 
+                     fill_index, fill_word_count, fill_addr_base + (fill_word_count << 2), ram_rdata);
         end
         if (state == WRITEBACK && ram_ready) begin
-            $display("GP D-Cache WRITEBACK: Index=%0d, Word=%0d, Data=0x%08X", 
-                     wb_index, wb_word_count, cache_data[wb_index][wb_word_count]);
+            $display("GP D-Cache WRITEBACK: Index=%0d, Word=%0d, Addr=0x%08X, Data=0x%08X", 
+                     wb_index, wb_word_count, wb_addr_base + (wb_word_count << 2), cache_data[wb_index][wb_word_count]);
+        end
+        if (state == FLUSH) begin
+            $display("GP D-Cache FLUSH: Line=%0d/%0d", flush_line_count, CACHE_LINES);
         end
     end
     
@@ -540,6 +632,8 @@ module gp_dcache_controller #(
         $display("  Cache Size: 2KB (%0d lines x %0d words)", CACHE_LINES, WORDS_PER_LINE);
         $display("  Tag bits: %0d, Index bits: %0d, Offset bits: %0d", 
                  TAG_BITS, INDEX_BITS, OFFSET_BITS);
+        $display("  Address breakdown: [31:11]=TAG, [10:4]=INDEX, [3:2]=WORD_OFFSET");
+        $display("  Cache line size: 16 bytes (4 words)");
         $display("  Write-back and write-through capable: YES");
         $display("  Cache coherency support: YES");
         $display("  Clock frequency: 100MHz");
