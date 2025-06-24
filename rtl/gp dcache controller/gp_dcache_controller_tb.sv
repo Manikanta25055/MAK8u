@@ -11,7 +11,7 @@
 // Tool Versions: Vivado 2024.2
 // Description: Comprehensive testbench for GP-Core Data Cache Controller
 //              Tests 2KB cache with write-back/write-through modes
-//              Validates cache coherency and advanced memory management
+//              Validates cache coherency and advanced memory management, test
 // 
 // Dependencies: gp_dcache_controller.sv
 // 
